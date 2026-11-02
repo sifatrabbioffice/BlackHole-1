@@ -1,18 +1,21 @@
-name: Build iOS IPA (BlackHole)
+name: Build iOS IPA (Wildcard & Dynamic Path)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-13
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: Checkout All Repository Files
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
-      - name: Setup Java
-        uses: actions/setup-java@v3
+      - name: Setup Java Environment
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -23,21 +26,34 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install Dependencies
-        run: flutter pub get
-
-      - name: Build iOS App (No Codesign)
-        run: flutter build ios --release --no-codesign
-
-      - name: Package Payload to IPA
+      - name: Locate & Restore Flutter Dependencies
         run: |
+          echo "Locating all pubspec.yaml files..."
+          find . -maxdepth 3 -name "pubspec.yaml" -execdir flutter pub get \;
+
+      - name: Build iOS Workspace (No Codesign)
+        run: |
+          echo "Building iOS Release package..."
+          flutter build ios --release --no-codesign
+
+      - name: Dynamic IPA Packaging with Wildcard
+        run: |
+          echo "Searching for built Runner.app bundle..."
+          APP_PATH=$(find build/ios -type d -name "*.app" | head -n 1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: Runner.app not found in build directory!"
+            exit 1
+          fi
+
+          echo "Found App at: $APP_PATH"
           mkdir -p Payload
-          mv build/ios/iphoneos/Runner.app Payload/
-          zip -r BlackHole.ipa Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r BlackHole-Dynamic.ipa Payload/
           rm -rf Payload
 
       - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: BlackHole-IPA
-          path: BlackHole.ipa
+          path: BlackHole-Dynamic.ipa
